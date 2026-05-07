@@ -16,6 +16,7 @@ import { formatDistanceToNow } from "date-fns";
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
+  searchInputRef?: React.RefObject<HTMLInputElement>;
 }
 
 function RenameInput({
@@ -58,11 +59,14 @@ function RenameInput({
   );
 }
 
-export function Sidebar({ isOpen, onClose }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
+  const internalSearchRef = useRef<HTMLInputElement>(null);
+
+  const effectiveSearchRef = searchInputRef ?? internalSearchRef;
 
   const { data: conversations = [], isLoading } = useListOpenaiConversations({
     query: { queryKey: getListOpenaiConversationsQueryKey() },
@@ -114,8 +118,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const sortedConversations = [...conversations]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .filter((c) =>
-      search.trim() === "" || c.title.toLowerCase().includes(search.toLowerCase())
+    .filter(
+      (c) =>
+        search.trim() === "" || c.title.toLowerCase().includes(search.toLowerCase())
     );
 
   return (
@@ -157,16 +162,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           >
             <Plus className="h-4 w-4" />
             New Chat
+            <span className="ml-auto text-[10px] font-mono text-primary/50 hidden md:block">⌘N</span>
           </Button>
 
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
             <input
+              ref={effectiveSearchRef}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search conversations…"
               className="w-full pl-8 pr-3 py-1.5 text-xs bg-secondary/40 border border-border/50 rounded-md text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
             />
+            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-muted-foreground/50 hidden md:block">⌘K</span>
           </div>
         </div>
 

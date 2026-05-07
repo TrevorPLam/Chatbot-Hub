@@ -1,7 +1,11 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Sidebar } from "./Sidebar";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useCreateOpenaiConversation } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
+import { getListOpenaiConversationsQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,11 +13,51 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const createMutation = useCreateOpenaiConversation();
+
+  const handleNewChat = useCallback(() => {
+    createMutation.mutate(
+      { data: { title: "New Conversation" } },
+      {
+        onSuccess: (newConv) => {
+          queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+          setLocation(`/conversations/${newConv.id}`);
+        },
+      }
+    );
+  }, [createMutation, queryClient, setLocation]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      // Cmd/Ctrl+N → new chat
+      if (mod && e.key === "n") {
+        e.preventDefault();
+        handleNewChat();
+      }
+      // Cmd/Ctrl+K → focus search
+      if (mod && e.key === "k") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleNewChat]);
 
   return (
     <div className="flex h-[100dvh] w-full bg-background overflow-hidden selection:bg-primary/30">
-      <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        searchInputRef={searchInputRef}
+      />
+
       <main className="flex-1 flex flex-col min-w-0 relative">
         <header className="md:hidden h-14 border-b border-border flex items-center px-4 shrink-0 bg-background/80 backdrop-blur z-10 sticky top-0">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} className="mr-2">
@@ -24,7 +68,7 @@ export function Layout({ children }: LayoutProps) {
             NexusChat
           </div>
         </header>
-        
+
         <div className="flex-1 overflow-hidden relative">
           {children}
         </div>
