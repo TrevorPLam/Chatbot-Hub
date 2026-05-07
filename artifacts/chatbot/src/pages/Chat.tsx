@@ -5,8 +5,11 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
 import { TagEditor } from "@/components/layout/TagEditor";
 import { TokenBadge } from "@/components/chat/TokenBadge";
+import { ModelSelector } from "@/components/chat/ModelSelector";
+import { SystemPromptEditor } from "@/components/chat/SystemPromptEditor";
 import {
   useGetOpenaiConversation,
+  useUpdateOpenaiConversation,
   getGetOpenaiConversationQueryKey,
   getListOpenaiMessagesQueryKey,
   getListOpenaiConversationsQueryKey,
@@ -51,6 +54,15 @@ export function ChatView() {
     },
   });
 
+  const updateConversation = useUpdateOpenaiConversation({
+    mutation: {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: getGetOpenaiConversationQueryKey(id) });
+        queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+      },
+    },
+  });
+
   const messages = conversation?.messages || [];
 
   const handleScroll = useCallback(() => {
@@ -89,32 +101,16 @@ export function ChatView() {
     queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
   }, [queryClient, id]);
 
-  const handleSend = async (content: string, imageBase64?: string, imageMimeType?: string) => {
-    if (!id || (!content.trim() && !imageBase64)) return;
-
-    const tempUserMessage: OpenaiMessage = {
-      id: Date.now(),
-      conversationId: id,
-      role: "user",
-      content,
-      createdAt: new Date().toISOString(),
-    };
-
-    queryClient.setQueryData(getGetOpenaiConversationQueryKey(id), (old: any) => {
-      if (!old) return old;
-      return { ...old, messages: [...old.messages, tempUserMessage] };
-    });
-
+  const streamFromEndpoint = async (endpoint: string, body?: object) => {
     setIsStreaming(true);
     setStreamingContent("");
-
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`/api/openai/conversations/${id}/messages`, {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content, imageBase64, imageMimeType }),
+        body: body !== undefined ? JSON.stringify(body) : "{}",
         signal: abortControllerRef.current.signal,
       });
 
@@ -129,7 +125,6 @@ export function ChatView() {
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-
         const lines = buffer.split("\n\n");
         buffer = lines.pop() || "";
 
@@ -137,12 +132,8 @@ export function ChatView() {
           if (line.startsWith("data: ")) {
             try {
               const data = JSON.parse(line.slice(6));
-              if (data.content) {
-                setStreamingContent((prev) => prev + data.content);
-              }
-              if (data.tokensUsed) {
-                setLastTokensUsed(data.tokensUsed);
-              }
+              if (data.content) setStreamingContent((prev) => prev + data.content);
+              if (data.tokensUsed) setLastTokensUsed(data.tokensUsed);
               if (data.done) break;
             } catch {
               // ignore parse errors
@@ -161,8 +152,55 @@ export function ChatView() {
     }
   };
 
+  const handleSend = async (content: string, imageBase64?: string, imageMimeType?: string) => {
+    if (!id || (!content.trim() && !imageBase64)) return;
+
+    const tempUserMessage: OpenaiMessage = {
+      id: Date.now(),
+      conversationId: id,
+      role: "user",
+      content,
+      createdAt: new Date().toISOString(),
+    };
+
+    queryClient.setQueryData(getGetOpenaiConversationQueryKey(id), (old: any) => {
+      if (!old) return old;
+      return { ...old, messages: [...old.messages, tempUserMessage] };
+    });
+
+    await streamFromEndpoint(`/api/openai/conversations/${id}/messages`, {
+      content,
+      imageBase64,
+      imageMimeType,
+    });
+  };
+
+  const handleRegenerate = async () => {
+    if (!id || isStreaming) return;
+
+    queryClient.setQueryData(getGetOpenaiConversationQueryKey(id), (old: any) => {
+      if (!old) return old;
+      const msgs = [...old.messages];
+      const lastAssistantIdx = msgs.map((m: OpenaiMessage) => m.role).lastIndexOf("assistant");
+      if (lastAssistantIdx !== -1) msgs.splice(lastAssistantIdx, 1);
+      return { ...old, messages: msgs };
+    });
+
+    await streamFromEndpoint(`/api/openai/conversations/${id}/regenerate`);
+  };
+
   const handleStop = () => {
     abortControllerRef.current?.abort();
+  };
+
+  const handleModelChange = (model: string) => {
+    if (!id) return;
+    updateConversation.mutate({ id, data: { model } });
+  };
+
+  const handleSystemPromptChange = (systemPrompt: string | null) => {
+    if (!id) return;
+    updateConversation.mutate({ id, data: { systemPrompt } });
   };
 
   if (isLoading) {
@@ -182,6 +220,7 @@ export function ChatView() {
   }
 
   const totalMessages = messages.length + (isStreaming ? 1 : 0);
+  const lastAssistantIdx = messages.map((m) => m.role).lastIndexOf("assistant");
 
   return (
     <div className="flex flex-col h-full relative">
@@ -205,17 +244,29 @@ export function ChatView() {
             />
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="gap-1.5 text-muted-foreground hover:text-foreground text-xs shrink-0"
-          onClick={() => exportMarkdown(conversation.title, messages)}
-          disabled={messages.length === 0}
-          title="Export as Markdown"
-        >
-          <Download className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Export</span>
-        </Button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <SystemPromptEditor
+            value={conversation.systemPrompt}
+            onChange={handleSystemPromptChange}
+            disabled={isStreaming}
+          />
+          <ModelSelector
+            value={conversation.model ?? "gpt-5.4"}
+            onChange={handleModelChange}
+            disabled={isStreaming}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-muted-foreground hover:text-foreground text-xs"
+            onClick={() => exportMarkdown(conversation.title, messages)}
+            disabled={messages.length === 0}
+            title="Export as Markdown"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Export</span>
+          </Button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -234,13 +285,15 @@ export function ChatView() {
             </div>
           )}
 
-          {messages.map((msg) => (
+          {messages.map((msg, idx) => (
             <MessageBubble
               key={msg.id}
               role={msg.role as "user" | "assistant"}
               content={msg.content}
               imageUrl={msg.imageUrl ?? undefined}
               tokensUsed={msg.tokensUsed ?? undefined}
+              isLast={idx === lastAssistantIdx}
+              onRegenerate={!isStreaming ? handleRegenerate : undefined}
             />
           ))}
 

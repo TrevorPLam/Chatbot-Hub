@@ -121,6 +121,8 @@ router.get("/openai/conversations", async (req, res): Promise<void> => {
     ...c,
     tags: c.tags ?? [],
     totalTokensUsed: c.totalTokensUsed ?? 0,
+    systemPrompt: c.systemPrompt ?? null,
+    model: c.model ?? "gpt-5.4",
   })));
 });
 
@@ -138,10 +140,17 @@ router.post("/openai/conversations", async (req, res): Promise<void> => {
       folderId: parsed.data.folderId ?? null,
       tags: [],
       totalTokensUsed: 0,
+      model: "gpt-5.4",
     })
     .returning();
 
-  res.status(201).json({ ...convo, tags: convo.tags ?? [], totalTokensUsed: convo.totalTokensUsed ?? 0 });
+  res.status(201).json({
+    ...convo,
+    tags: convo.tags ?? [],
+    totalTokensUsed: convo.totalTokensUsed ?? 0,
+    systemPrompt: convo.systemPrompt ?? null,
+    model: convo.model ?? "gpt-5.4",
+  });
 });
 
 router.get("/openai/conversations/:id", async (req, res): Promise<void> => {
@@ -171,6 +180,8 @@ router.get("/openai/conversations/:id", async (req, res): Promise<void> => {
     ...convo,
     tags: convo.tags ?? [],
     totalTokensUsed: convo.totalTokensUsed ?? 0,
+    systemPrompt: convo.systemPrompt ?? null,
+    model: convo.model ?? "gpt-5.4",
     messages: msgs,
   });
 });
@@ -192,6 +203,8 @@ router.patch("/openai/conversations/:id", async (req, res): Promise<void> => {
   if (body.data.title !== undefined) updateData.title = body.data.title;
   if ("folderId" in body.data) updateData.folderId = body.data.folderId;
   if (body.data.tags !== undefined) updateData.tags = body.data.tags;
+  if ("systemPrompt" in body.data) updateData.systemPrompt = body.data.systemPrompt;
+  if (body.data.model !== undefined) updateData.model = body.data.model;
 
   const [updated] = await db
     .update(conversations)
@@ -204,7 +217,13 @@ router.patch("/openai/conversations/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  res.json({ ...updated, tags: updated.tags ?? [], totalTokensUsed: updated.totalTokensUsed ?? 0 });
+  res.json({
+    ...updated,
+    tags: updated.tags ?? [],
+    totalTokensUsed: updated.totalTokensUsed ?? 0,
+    systemPrompt: updated.systemPrompt ?? null,
+    model: updated.model ?? "gpt-5.4",
+  });
 });
 
 router.delete("/openai/conversations/:id", async (req, res): Promise<void> => {
@@ -280,7 +299,6 @@ router.post(
       return;
     }
 
-    // Store user message (with image URL if provided)
     const imageDataUrl = imageBase64
       ? `data:${imageMimeType};base64,${imageBase64}`
       : null;
@@ -298,25 +316,28 @@ router.post(
       .where(eq(messages.conversationId, conversationId))
       .orderBy(messages.createdAt);
 
-    // Build chat messages for OpenAI — include images if present
-    const chatMessages = existingMessages.map((m) => {
+    const chatMessages: Parameters<typeof openai.chat.completions.create>[0]["messages"] = [];
+
+    if (convo.systemPrompt) {
+      chatMessages.push({ role: "system", content: convo.systemPrompt });
+    }
+
+    for (const m of existingMessages) {
       if (m.imageUrl && m.role === "user") {
-        return {
-          role: "user" as const,
+        chatMessages.push({
+          role: "user",
           content: [
-            { type: "text" as const, text: m.content },
-            {
-              type: "image_url" as const,
-              image_url: { url: m.imageUrl },
-            },
+            { type: "text", text: m.content },
+            { type: "image_url", image_url: { url: m.imageUrl } },
           ],
-        };
+        });
+      } else {
+        chatMessages.push({
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+        });
       }
-      return {
-        role: m.role as "user" | "assistant" | "system",
-        content: m.content,
-      };
-    });
+    }
 
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -325,9 +346,10 @@ router.post(
 
     let fullResponse = "";
     let totalTokens = 0;
+    const model = convo.model ?? "gpt-5.4";
 
     const stream = await openai.chat.completions.create({
-      model: "gpt-5.4",
+      model,
       max_completion_tokens: 8192,
       messages: chatMessages,
       stream: true,
@@ -345,7 +367,6 @@ router.post(
       }
     }
 
-    // Store assistant message with token count
     await db.insert(messages).values({
       conversationId,
       role: "assistant",
@@ -353,7 +374,6 @@ router.post(
       tokensUsed: totalTokens || null,
     });
 
-    // Update conversation total token usage
     if (totalTokens > 0) {
       await db
         .update(conversations)
@@ -361,13 +381,130 @@ router.post(
         .where(eq(conversations.id, conversationId));
     }
 
-    // Auto-generate title from first user message if title is still default
     if (convo.title === "New Conversation") {
       const truncated = userContent.slice(0, 60).trim();
       const autoTitle = truncated.length < userContent.length ? truncated + "…" : truncated;
       await db
         .update(conversations)
         .set({ title: autoTitle })
+        .where(eq(conversations.id, conversationId));
+    }
+
+    res.write(`data: ${JSON.stringify({ done: true, tokensUsed: totalTokens })}\n\n`);
+    res.end();
+  },
+);
+
+// ─── Regenerate last assistant message ──────────────────────────────────────
+
+router.post(
+  "/openai/conversations/:id/regenerate",
+  async (req: Request, res: Response): Promise<void> => {
+    const params = GetOpenaiConversationParams.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ error: params.error.message });
+      return;
+    }
+
+    const conversationId = params.data.id;
+
+    const [convo] = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.id, conversationId));
+
+    if (!convo) {
+      res.status(404).json({ error: "Conversation not found" });
+      return;
+    }
+
+    const allMessages = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.createdAt);
+
+    const lastAssistant = [...allMessages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) {
+      res.status(400).json({ error: "No assistant message to regenerate" });
+      return;
+    }
+
+    if (lastAssistant.tokensUsed && lastAssistant.tokensUsed > 0) {
+      await db
+        .update(conversations)
+        .set({
+          totalTokensUsed: sql`GREATEST(0, ${conversations.totalTokensUsed} - ${lastAssistant.tokensUsed})`,
+        })
+        .where(eq(conversations.id, conversationId));
+    }
+
+    await db.delete(messages).where(eq(messages.id, lastAssistant.id));
+
+    const remainingMessages = allMessages.filter((m) => m.id !== lastAssistant.id);
+
+    const chatMessages: Parameters<typeof openai.chat.completions.create>[0]["messages"] = [];
+
+    if (convo.systemPrompt) {
+      chatMessages.push({ role: "system", content: convo.systemPrompt });
+    }
+
+    for (const m of remainingMessages) {
+      if (m.imageUrl && m.role === "user") {
+        chatMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: m.content },
+            { type: "image_url", image_url: { url: m.imageUrl } },
+          ],
+        });
+      } else {
+        chatMessages.push({
+          role: m.role as "user" | "assistant" | "system",
+          content: m.content,
+        });
+      }
+    }
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    let fullResponse = "";
+    let totalTokens = 0;
+    const model = convo.model ?? "gpt-5.4";
+
+    const stream = await openai.chat.completions.create({
+      model,
+      max_completion_tokens: 8192,
+      messages: chatMessages,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+
+    for await (const chunk of stream) {
+      const content = chunk.choices[0]?.delta?.content;
+      if (content) {
+        fullResponse += content;
+        res.write(`data: ${JSON.stringify({ content })}\n\n`);
+      }
+      if (chunk.usage) {
+        totalTokens = chunk.usage.total_tokens ?? 0;
+      }
+    }
+
+    await db.insert(messages).values({
+      conversationId,
+      role: "assistant",
+      content: fullResponse,
+      tokensUsed: totalTokens || null,
+    });
+
+    if (totalTokens > 0) {
+      await db
+        .update(conversations)
+        .set({ totalTokensUsed: sql`${conversations.totalTokensUsed} + ${totalTokens}` })
         .where(eq(conversations.id, conversationId));
     }
 
@@ -424,7 +561,6 @@ router.post(
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
 
-    // Persist both sides
     if (userTranscript || assistantTranscript) {
       await db.insert(messages).values([
         ...(userTranscript ? [{ conversationId, role: "user", content: userTranscript }] : []),
@@ -432,7 +568,6 @@ router.post(
       ]);
     }
 
-    // Auto-generate title
     if (convo.title === "New Conversation" && userTranscript) {
       const truncated = userTranscript.slice(0, 60).trim();
       const autoTitle = truncated.length < userTranscript.length ? truncated + "…" : truncated;

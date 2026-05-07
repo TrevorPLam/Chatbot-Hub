@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Bot, User, Copy, Check } from "lucide-react";
+import { Bot, User, Copy, Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { TokenBadge } from "./TokenBadge";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
@@ -13,6 +13,8 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
   imageUrl?: string;
   tokensUsed?: number;
+  isLast?: boolean;
+  onRegenerate?: () => void;
 }
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
@@ -117,7 +119,7 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
   em: ({ children }) => <em className="italic text-foreground/90">{children}</em>,
 };
 
-export function MessageBubble({ role, content, isStreaming, imageUrl, tokensUsed }: MessageBubbleProps) {
+export function MessageBubble({ role, content, isStreaming, imageUrl, tokensUsed, isLast, onRegenerate }: MessageBubbleProps) {
   const isUser = role === "user";
 
   return (
@@ -142,9 +144,19 @@ export function MessageBubble({ role, content, isStreaming, imageUrl, tokensUsed
                 className="opacity-0 group-hover:opacity-100"
               />
             )}
+            {!isUser && !isStreaming && isLast && onRegenerate && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-primary transition-colors opacity-0 group-hover:opacity-100"
+                onClick={onRegenerate}
+                title="Regenerate response"
+              >
+                <RefreshCw className="h-3 w-3" />
+              </Button>
+            )}
           </div>
 
-          {/* Attached image */}
           {imageUrl && (
             <div className="mb-2">
               <img

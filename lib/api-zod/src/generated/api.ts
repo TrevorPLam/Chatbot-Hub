@@ -108,6 +108,8 @@ export const ListOpenaiConversationsResponseItem = zod.object({
   folderId: zod.number().nullish(),
   tags: zod.array(zod.string()),
   totalTokensUsed: zod.number(),
+  systemPrompt: zod.string().nullish(),
+  model: zod.string(),
   createdAt: zod.coerce.date(),
 });
 export const ListOpenaiConversationsResponse = zod.array(
@@ -135,6 +137,8 @@ export const GetOpenaiConversationResponse = zod.object({
   folderId: zod.number().nullish(),
   tags: zod.array(zod.string()),
   totalTokensUsed: zod.number(),
+  systemPrompt: zod.string().nullish(),
+  model: zod.string(),
   createdAt: zod.coerce.date(),
   messages: zod.array(
     zod.object({
@@ -160,6 +164,8 @@ export const UpdateOpenaiConversationBody = zod.object({
   title: zod.string().optional(),
   folderId: zod.number().nullish(),
   tags: zod.array(zod.string()).optional(),
+  systemPrompt: zod.string().nullish(),
+  model: zod.string().optional(),
 });
 
 export const UpdateOpenaiConversationResponse = zod.object({
@@ -168,6 +174,8 @@ export const UpdateOpenaiConversationResponse = zod.object({
   folderId: zod.number().nullish(),
   tags: zod.array(zod.string()),
   totalTokensUsed: zod.number(),
+  systemPrompt: zod.string().nullish(),
+  model: zod.string(),
   createdAt: zod.coerce.date(),
 });
 
@@ -175,6 +183,13 @@ export const UpdateOpenaiConversationResponse = zod.object({
  * @summary Delete a conversation
  */
 export const DeleteOpenaiConversationParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Regenerate the last assistant message in a conversation
+ */
+export const RegenerateOpenaiMessageParams = zod.object({
   id: zod.coerce.number(),
 });
 

@@ -247,6 +247,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpenaiError"
+  /openai/conversations/{id}/regenerate:
+    post:
+      operationId: regenerateOpenaiMessage
+      tags: [openai]
+      summary: Regenerate the last assistant message in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: SSE stream of regenerated assistant text chunks
+          content:
+            text/event-stream: {}
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenaiError"
   /openai/conversations/{id}/messages:
     get:
       operationId: listOpenaiMessages
@@ -503,6 +525,10 @@ components:
             type: string
         totalTokensUsed:
           type: integer
+        systemPrompt:
+          type: [string, 'null']
+        model:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -512,6 +538,7 @@ components:
         - createdAt
         - tags
         - totalTokensUsed
+        - model
     OpenaiMessage:
       type: object
       properties:
@@ -556,6 +583,10 @@ components:
           type: array
           items:
             type: string
+        systemPrompt:
+          type: [string, 'null']
+        model:
+          type: string
     SendOpenaiMessageBody:
       type: object
       properties:
@@ -592,6 +623,10 @@ components:
             type: string
         totalTokensUsed:
           type: integer
+        systemPrompt:
+          type: [string, 'null']
+        model:
+          type: string
         createdAt:
           type: string
           format: date-time
@@ -605,6 +640,7 @@ components:
         - createdAt
         - tags
         - totalTokensUsed
+        - model
         - messages
     OpenaiFolder:
       type: object

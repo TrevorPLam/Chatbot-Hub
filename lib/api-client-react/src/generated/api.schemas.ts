@@ -58,6 +58,9 @@ export interface OpenaiConversation {
   folderId?: number | null;
   tags: string[];
   totalTokensUsed: number;
+  /** @nullable */
+  systemPrompt?: string | null;
+  model: string;
   createdAt: string;
 }
 
@@ -83,6 +86,9 @@ export interface UpdateOpenaiConversationBody {
   /** @nullable */
   folderId?: number | null;
   tags?: string[];
+  /** @nullable */
+  systemPrompt?: string | null;
+  model?: string;
 }
 
 export interface SendOpenaiMessageBody {
@@ -103,6 +109,9 @@ export interface OpenaiConversationWithMessages {
   folderId?: number | null;
   tags: string[];
   totalTokensUsed: number;
+  /** @nullable */
+  systemPrompt?: string | null;
+  model: string;
   createdAt: string;
   messages: OpenaiMessage[];
 }

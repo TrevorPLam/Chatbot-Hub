@@ -10,6 +10,8 @@ export const conversations = pgTable("conversations", {
   folderId: integer("folder_id").references(() => folders.id, { onDelete: "set null" }),
   tags: text("tags").array().notNull().default([]),
   totalTokensUsed: integer("total_tokens_used").notNull().default(0),
+  systemPrompt: text("system_prompt"),
+  model: text("model").notNull().default("gpt-5.4"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

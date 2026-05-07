@@ -1075,6 +1075,90 @@ export const useDeleteOpenaiConversation = <
 };
 
 /**
+ * @summary Regenerate the last assistant message in a conversation
+ */
+export const getRegenerateOpenaiMessageUrl = (id: number) => {
+  return `/api/openai/conversations/${id}/regenerate`;
+};
+
+export const regenerateOpenaiMessage = async (
+  id: number,
+  options?: RequestInit,
+): Promise<unknown> => {
+  return customFetch<unknown>(getRegenerateOpenaiMessageUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRegenerateOpenaiMessageMutationOptions = <
+  TError = ErrorType<OpenaiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateOpenaiMessage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof regenerateOpenaiMessage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["regenerateOpenaiMessage"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof regenerateOpenaiMessage>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return regenerateOpenaiMessage(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RegenerateOpenaiMessageMutationResult = NonNullable<
+  Awaited<ReturnType<typeof regenerateOpenaiMessage>>
+>;
+
+export type RegenerateOpenaiMessageMutationError = ErrorType<OpenaiError>;
+
+/**
+ * @summary Regenerate the last assistant message in a conversation
+ */
+export const useRegenerateOpenaiMessage = <
+  TError = ErrorType<OpenaiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof regenerateOpenaiMessage>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof regenerateOpenaiMessage>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getRegenerateOpenaiMessageMutationOptions(options));
+};
+
+/**
  * @summary List messages in a conversation
  */
 export const getListOpenaiMessagesUrl = (id: number) => {
