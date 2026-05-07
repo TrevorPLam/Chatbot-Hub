@@ -9,9 +9,55 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface AuthUser {
+  id: string;
+  /** @nullable */
+  email: string | null;
+  /** @nullable */
+  firstName: string | null;
+  /** @nullable */
+  lastName: string | null;
+  /** @nullable */
+  profileImageUrl: string | null;
+}
+
+export interface AuthUserEnvelope {
+  user: AuthUser | null;
+}
+
+export interface MobileTokenExchangeRequest {
+  /** @minLength 1 */
+  code: string;
+  /** @minLength 1 */
+  code_verifier: string;
+  /** @minLength 1 */
+  redirect_uri: string;
+  /** @minLength 1 */
+  state: string;
+  /** @minLength 1 */
+  nonce?: string;
+}
+
+export interface MobileTokenExchangeSuccess {
+  token: string;
+}
+
+export const LogoutSuccessValue = {
+  success: true,
+} as const;
+export type LogoutSuccess = typeof LogoutSuccessValue;
+
+export interface ErrorEnvelope {
+  error: string;
+}
+
 export interface OpenaiConversation {
   id: number;
   title: string;
+  /** @nullable */
+  folderId?: number | null;
+  tags: string[];
+  totalTokensUsed: number;
   createdAt: string;
 }
 
@@ -20,28 +66,91 @@ export interface OpenaiMessage {
   conversationId: number;
   role: string;
   content: string;
+  /** @nullable */
+  imageUrl?: string | null;
+  /** @nullable */
+  tokensUsed?: number | null;
   createdAt: string;
 }
 
 export interface CreateOpenaiConversationBody {
   title: string;
+  folderId?: number;
 }
 
 export interface UpdateOpenaiConversationBody {
-  title: string;
+  title?: string;
+  /** @nullable */
+  folderId?: number | null;
+  tags?: string[];
 }
 
 export interface SendOpenaiMessageBody {
   content: string;
+  imageBase64?: string;
+  imageMimeType?: string;
+}
+
+export interface SendOpenaiVoiceMessageBody {
+  audioBase64: string;
+  mimeType: string;
 }
 
 export interface OpenaiConversationWithMessages {
   id: number;
   title: string;
+  /** @nullable */
+  folderId?: number | null;
+  tags: string[];
+  totalTokensUsed: number;
   createdAt: string;
   messages: OpenaiMessage[];
+}
+
+export interface OpenaiFolder {
+  id: number;
+  name: string;
+  createdAt: string;
+}
+
+export interface CreateOpenaiFolderBody {
+  name: string;
+}
+
+export interface UpdateOpenaiFolderBody {
+  name: string;
+}
+
+export type OpenaiTokenUsageByConversationItem = {
+  conversationId: number;
+  title: string;
+  tokens: number;
+};
+
+export interface OpenaiTokenUsage {
+  totalTokens: number;
+  totalMessages: number;
+  byConversation: OpenaiTokenUsageByConversationItem[];
 }
 
 export interface OpenaiError {
   error: string;
 }
+
+/**
+ * Opaque session token — `Bearer <sid>`.
+ */
+export type AuthorizationSessionHeaderParameter = string;
+
+export type BeginBrowserLoginParams = {
+  /**
+   * Relative path to redirect to after login (must start with `/`). Defaults to `/`.
+   */
+  returnTo?: string;
+};
+
+export type HandleBrowserLoginCallbackParams = {
+  code?: string;
+  state?: string;
+  iss?: string;
+};

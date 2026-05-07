@@ -9,14 +9,17 @@ import {
   getGetOpenaiConversationQueryKey,
 } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
-import { Plus, MessageSquare, Trash2, X, Search, Pencil, Check } from "lucide-react";
+import { Plus, MessageSquare, Trash2, X, Search, Pencil, Folder, BarChart3, LogOut, User } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
+import { FolderManager } from "./FolderManager";
+import { useAuth } from "@workspace/replit-auth-web";
 
 interface SidebarProps {
   isOpen: boolean;
   onClose: () => void;
   searchInputRef?: React.RefObject<HTMLInputElement>;
+  onShowTokenUsage: () => void;
 }
 
 function RenameInput({
@@ -59,12 +62,15 @@ function RenameInput({
   );
 }
 
-export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
+export function Sidebar({ isOpen, onClose, searchInputRef, onShowTokenUsage }: SidebarProps) {
   const [location, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [showFolders, setShowFolders] = useState(false);
   const internalSearchRef = useRef<HTMLInputElement>(null);
+  const { user, isAuthenticated, login, logout } = useAuth();
 
   const effectiveSearchRef = searchInputRef ?? internalSearchRef;
 
@@ -116,12 +122,24 @@ export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
     setRenamingId(null);
   };
 
+  const handleMoveToFolder = (convId: number, folderId: number | null) => {
+    updateMutation.mutate(
+      { id: convId, data: { folderId } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+        },
+      }
+    );
+  };
+
   const sortedConversations = [...conversations]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .filter(
-      (c) =>
-        search.trim() === "" || c.title.toLowerCase().includes(search.toLowerCase())
-    );
+    .filter((c) => {
+      const matchesSearch = search.trim() === "" || c.title.toLowerCase().includes(search.toLowerCase());
+      const matchesFolder = selectedFolderId === null || c.folderId === selectedFolderId;
+      return matchesSearch && matchesFolder;
+    });
 
   return (
     <>
@@ -139,21 +157,43 @@ export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
           ${isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
         `}
       >
+        {/* Header */}
         <div className="p-4 flex items-center justify-between border-b border-sidebar-border">
           <div className="flex items-center gap-2 font-mono font-bold text-primary">
             <div className="w-4 h-4 bg-primary rounded-sm animate-pulse" />
             NexusChat
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden text-sidebar-foreground"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowFolders((v) => !v)}
+              title="Toggle folders"
+            >
+              <Folder className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={onShowTokenUsage}
+              title="Token usage"
+            >
+              <BarChart3 className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden h-7 w-7 text-sidebar-foreground"
+              onClick={onClose}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
+        {/* New chat + search */}
         <div className="p-4 flex flex-col gap-2">
           <Button
             className="w-full justify-start gap-2 bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20"
@@ -178,21 +218,33 @@ export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
           </div>
         </div>
 
+        {/* Folder manager */}
+        {showFolders && (
+          <div className="border-b border-sidebar-border">
+            <FolderManager
+              selectedFolderId={selectedFolderId}
+              onSelectFolder={setSelectedFolderId}
+            />
+          </div>
+        )}
+
+        {/* Conversation list */}
         <div className="flex-1 overflow-y-auto px-3 space-y-1 pb-2">
           {isLoading ? (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 p-2">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-12 bg-sidebar-accent/50 rounded-md animate-pulse" />
               ))}
             </div>
           ) : sortedConversations.length === 0 ? (
             <div className="text-center p-4 text-sm text-muted-foreground mt-4">
-              {search ? "No matches found" : "No conversations yet"}
+              {search ? "No matches found" : selectedFolderId !== null ? "No conversations in this folder" : "No conversations yet"}
             </div>
           ) : (
             sortedConversations.map((conv) => {
               const isActive = location === `/conversations/${conv.id}`;
               const isRenaming = renamingId === conv.id;
+              const tags = (conv as any).tags as string[] ?? [];
 
               return (
                 <Link key={conv.id} href={`/conversations/${conv.id}`}>
@@ -244,9 +296,23 @@ export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
                         </div>
                       )}
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-1 ml-6">
-                      {formatDistanceToNow(new Date(conv.createdAt), { addSuffix: true })}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1 ml-6">
+                      <span className="text-[10px] text-muted-foreground">
+                        {formatDistanceToNow(new Date(conv.createdAt), { addSuffix: true })}
+                      </span>
+                      {tags.length > 0 && (
+                        <div className="flex gap-1 flex-wrap">
+                          {tags.slice(0, 2).map((tag) => (
+                            <span key={tag} className="text-[9px] font-mono px-1 py-0.5 rounded bg-primary/10 text-primary/70 border border-primary/20">
+                              #{tag}
+                            </span>
+                          ))}
+                          {tags.length > 2 && (
+                            <span className="text-[9px] text-muted-foreground">+{tags.length - 2}</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </Link>
               );
@@ -254,8 +320,55 @@ export function Sidebar({ isOpen, onClose, searchInputRef }: SidebarProps) {
           )}
         </div>
 
-        <div className="p-4 border-t border-sidebar-border text-xs text-sidebar-foreground/50 font-mono text-center">
-          SYSTEM_READY
+        {/* Footer: auth + status */}
+        <div className="border-t border-sidebar-border">
+          {isAuthenticated && user ? (
+            <div className="p-3 flex items-center gap-2">
+              {user.profileImageUrl ? (
+                <img
+                  src={user.profileImageUrl}
+                  alt="avatar"
+                  className="w-7 h-7 rounded-full border border-border"
+                />
+              ) : (
+                <div className="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center border border-primary/30">
+                  <User className="h-3.5 w-3.5 text-primary" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate text-foreground">
+                  {user.firstName ?? user.email ?? "User"}
+                </div>
+                {user.email && (
+                  <div className="text-[10px] text-muted-foreground truncate">{user.email}</div>
+                )}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive shrink-0"
+                onClick={logout}
+                title="Sign out"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="p-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-xs gap-2"
+                onClick={login}
+              >
+                <User className="h-3.5 w-3.5" />
+                Sign in
+              </Button>
+            </div>
+          )}
+          <div className="px-4 pb-3 text-xs text-sidebar-foreground/50 font-mono text-center">
+            SYSTEM_READY
+          </div>
         </div>
       </aside>
     </>

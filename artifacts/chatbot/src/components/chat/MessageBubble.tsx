@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Bot, User, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { TokenBadge } from "./TokenBadge";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +11,8 @@ interface MessageBubbleProps {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  imageUrl?: string;
+  tokensUsed?: number;
 }
 
 function CopyButton({ text, className = "" }: { text: string; className?: string }) {
@@ -64,7 +67,6 @@ function CodeBlock({ language, code }: { language: string; code: string }) {
 }
 
 const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components"] = {
-  // Code blocks and inline code
   code({ className, children, ...props }) {
     const match = /language-(\w+)/.exec(className || "");
     const isBlock = !!match || String(children).includes("\n");
@@ -85,23 +87,18 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
       </code>
     );
   },
-  // Headings
   h1: ({ children }) => <h1 className="text-xl font-bold mt-4 mb-2 text-foreground border-b border-border/40 pb-1">{children}</h1>,
   h2: ({ children }) => <h2 className="text-lg font-bold mt-3 mb-2 text-foreground">{children}</h2>,
   h3: ({ children }) => <h3 className="text-base font-semibold mt-2 mb-1 text-foreground">{children}</h3>,
-  // Paragraphs
   p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
-  // Lists
   ul: ({ children }) => <ul className="mb-2 ml-4 space-y-1 list-disc marker:text-primary/60">{children}</ul>,
   ol: ({ children }) => <ol className="mb-2 ml-4 space-y-1 list-decimal marker:text-primary/60">{children}</ol>,
   li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  // Blockquote
   blockquote: ({ children }) => (
     <blockquote className="border-l-2 border-primary/50 pl-4 my-2 text-muted-foreground italic">
       {children}
     </blockquote>
   ),
-  // Table
   table: ({ children }) => (
     <div className="overflow-x-auto my-3 rounded-lg border border-border/50">
       <table className="w-full text-sm border-collapse">{children}</table>
@@ -110,20 +107,17 @@ const markdownComponents: React.ComponentProps<typeof ReactMarkdown>["components
   thead: ({ children }) => <thead className="bg-black/30 text-muted-foreground text-xs uppercase">{children}</thead>,
   th: ({ children }) => <th className="px-4 py-2 text-left font-semibold border-b border-border/40">{children}</th>,
   td: ({ children }) => <td className="px-4 py-2 border-b border-border/20 last:border-b-0">{children}</td>,
-  // Horizontal rule
   hr: () => <hr className="my-4 border-border/40" />,
-  // Links
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2 hover:text-primary/80">
       {children}
     </a>
   ),
-  // Strong / em
   strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
   em: ({ children }) => <em className="italic text-foreground/90">{children}</em>,
 };
 
-export function MessageBubble({ role, content, isStreaming }: MessageBubbleProps) {
+export function MessageBubble({ role, content, isStreaming, imageUrl, tokensUsed }: MessageBubbleProps) {
   const isUser = role === "user";
 
   return (
@@ -139,6 +133,9 @@ export function MessageBubble({ role, content, isStreaming }: MessageBubbleProps
             <div className="text-xs font-mono text-muted-foreground">
               {isUser ? "USER" : "NEXUS_AI"}
             </div>
+            {!isUser && !isStreaming && tokensUsed && (
+              <TokenBadge tokens={tokensUsed} />
+            )}
             {!isUser && !isStreaming && (
               <CopyButton
                 text={content}
@@ -146,6 +143,17 @@ export function MessageBubble({ role, content, isStreaming }: MessageBubbleProps
               />
             )}
           </div>
+
+          {/* Attached image */}
+          {imageUrl && (
+            <div className="mb-2">
+              <img
+                src={imageUrl}
+                alt="Attached"
+                className="max-w-xs max-h-64 rounded-lg border border-border/50 object-contain"
+              />
+            </div>
+          )}
 
           <div className={`
             px-4 py-3 rounded-2xl text-sm leading-relaxed min-w-0 w-full
@@ -161,7 +169,7 @@ export function MessageBubble({ role, content, isStreaming }: MessageBubbleProps
                   remarkPlugins={[remarkGfm]}
                   components={markdownComponents}
                 >
-                  {content}
+                  {content || " "}
                 </ReactMarkdown>
               </div>
             )}

@@ -16,11 +16,98 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * @summary Get the currently authenticated user
+ */
+export const GetCurrentAuthUserHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+export const GetCurrentAuthUserResponse = zod.object({
+  user: zod.union([
+    zod.object({
+      id: zod.string(),
+      email: zod.string().email().nullable(),
+      firstName: zod.string().nullable(),
+      lastName: zod.string().nullable(),
+      profileImageUrl: zod.string().nullable(),
+    }),
+    zod.null(),
+  ]),
+});
+
+/**
+ * @summary Start the browser OIDC login flow
+ */
+export const BeginBrowserLoginQueryParams = zod.object({
+  returnTo: zod.coerce
+    .string()
+    .optional()
+    .describe(
+      "Relative path to redirect to after login (must start with `\/`). Defaults to `\/`.",
+    ),
+});
+
+/**
+ * @summary Complete the browser OIDC login flow
+ */
+export const HandleBrowserLoginCallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+  iss: zod.coerce.string().url().optional(),
+});
+
+/**
+ * @summary Clear the session and begin OIDC logout
+ */
+export const LogoutBrowserSessionHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+/**
+ * @summary Exchange a mobile OIDC code for a session token
+ */
+
+export const ExchangeMobileAuthorizationCodeBody = zod.object({
+  code: zod.string().min(1),
+  code_verifier: zod.string().min(1),
+  redirect_uri: zod.string().url().min(1),
+  state: zod.string().min(1),
+  nonce: zod.string().min(1).optional(),
+});
+
+export const ExchangeMobileAuthorizationCodeResponse = zod.object({
+  token: zod.string(),
+});
+
+/**
+ * @summary Delete a mobile session token
+ */
+export const LogoutMobileSessionHeader = zod.object({
+  Authorization: zod
+    .string()
+    .optional()
+    .describe("Opaque session token — `Bearer <sid>`."),
+});
+
+export const LogoutMobileSessionResponse = zod.object({
+  success: zod.boolean(),
+});
+
+/**
  * @summary List all conversations
  */
 export const ListOpenaiConversationsResponseItem = zod.object({
   id: zod.number(),
   title: zod.string(),
+  folderId: zod.number().nullish(),
+  tags: zod.array(zod.string()),
+  totalTokensUsed: zod.number(),
   createdAt: zod.coerce.date(),
 });
 export const ListOpenaiConversationsResponse = zod.array(
@@ -32,6 +119,7 @@ export const ListOpenaiConversationsResponse = zod.array(
  */
 export const CreateOpenaiConversationBody = zod.object({
   title: zod.string(),
+  folderId: zod.number().optional(),
 });
 
 /**
@@ -44,6 +132,9 @@ export const GetOpenaiConversationParams = zod.object({
 export const GetOpenaiConversationResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
+  folderId: zod.number().nullish(),
+  tags: zod.array(zod.string()),
+  totalTokensUsed: zod.number(),
   createdAt: zod.coerce.date(),
   messages: zod.array(
     zod.object({
@@ -51,6 +142,8 @@ export const GetOpenaiConversationResponse = zod.object({
       conversationId: zod.number(),
       role: zod.string(),
       content: zod.string(),
+      imageUrl: zod.string().nullish(),
+      tokensUsed: zod.number().nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
@@ -64,12 +157,17 @@ export const UpdateOpenaiConversationParams = zod.object({
 });
 
 export const UpdateOpenaiConversationBody = zod.object({
-  title: zod.string(),
+  title: zod.string().optional(),
+  folderId: zod.number().nullish(),
+  tags: zod.array(zod.string()).optional(),
 });
 
 export const UpdateOpenaiConversationResponse = zod.object({
   id: zod.number(),
   title: zod.string(),
+  folderId: zod.number().nullish(),
+  tags: zod.array(zod.string()),
+  totalTokensUsed: zod.number(),
   createdAt: zod.coerce.date(),
 });
 
@@ -92,6 +190,8 @@ export const ListOpenaiMessagesResponseItem = zod.object({
   conversationId: zod.number(),
   role: zod.string(),
   content: zod.string(),
+  imageUrl: zod.string().nullish(),
+  tokensUsed: zod.number().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListOpenaiMessagesResponse = zod.array(
@@ -99,7 +199,7 @@ export const ListOpenaiMessagesResponse = zod.array(
 );
 
 /**
- * @summary Send a text message and receive a streaming text response
+ * @summary Send a text message (with optional image) and receive a streaming text response
  */
 export const SendOpenaiMessageParams = zod.object({
   id: zod.coerce.number(),
@@ -107,4 +207,76 @@ export const SendOpenaiMessageParams = zod.object({
 
 export const SendOpenaiMessageBody = zod.object({
   content: zod.string(),
+  imageBase64: zod.string().optional(),
+  imageMimeType: zod.string().optional(),
+});
+
+/**
+ * @summary Send a voice message and receive a streaming audio response
+ */
+export const SendOpenaiVoiceMessageParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SendOpenaiVoiceMessageBody = zod.object({
+  audioBase64: zod.string(),
+  mimeType: zod.string(),
+});
+
+/**
+ * @summary List all folders
+ */
+export const ListOpenaiFoldersResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+export const ListOpenaiFoldersResponse = zod.array(
+  ListOpenaiFoldersResponseItem,
+);
+
+/**
+ * @summary Create a new folder
+ */
+export const CreateOpenaiFolderBody = zod.object({
+  name: zod.string(),
+});
+
+/**
+ * @summary Rename a folder
+ */
+export const UpdateOpenaiFolderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateOpenaiFolderBody = zod.object({
+  name: zod.string(),
+});
+
+export const UpdateOpenaiFolderResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a folder
+ */
+export const DeleteOpenaiFolderParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Get token usage summary
+ */
+export const GetOpenaiTokenUsageResponse = zod.object({
+  totalTokens: zod.number(),
+  totalMessages: zod.number(),
+  byConversation: zod.array(
+    zod.object({
+      conversationId: zod.number(),
+      title: zod.string(),
+      tokens: zod.number(),
+    }),
+  ),
 });

@@ -3,6 +3,8 @@ import { useRoute, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
+import { TagEditor } from "@/components/layout/TagEditor";
+import { TokenBadge } from "@/components/chat/TokenBadge";
 import {
   useGetOpenaiConversation,
   getGetOpenaiConversationQueryKey,
@@ -39,6 +41,7 @@ export function ChatView() {
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [lastTokensUsed, setLastTokensUsed] = useState(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const { data: conversation, isLoading } = useGetOpenaiConversation(id, {
@@ -50,7 +53,6 @@ export function ChatView() {
 
   const messages = conversation?.messages || [];
 
-  // Track scroll position to show/hide scroll-to-bottom button
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -64,7 +66,6 @@ export function ChatView() {
     }
   }, []);
 
-  // Auto-send prompt from query param
   useEffect(() => {
     if (!id || isLoading || autoSentRef.current) return;
     const promptParam = new URLSearchParams(search).get("prompt");
@@ -76,15 +77,20 @@ export function ChatView() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, isLoading, messages.length]);
 
-  // Scroll to bottom on new messages / streaming
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, streamingContent]);
 
-  const handleSend = async (content: string) => {
-    if (!id || !content.trim()) return;
+  const invalidateAll = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: getGetOpenaiConversationQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getListOpenaiMessagesQueryKey(id) });
+    queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+  }, [queryClient, id]);
+
+  const handleSend = async (content: string, imageBase64?: string, imageMimeType?: string) => {
+    if (!id || (!content.trim() && !imageBase64)) return;
 
     const tempUserMessage: OpenaiMessage = {
       id: Date.now(),
@@ -108,7 +114,7 @@ export function ChatView() {
       const response = await fetch(`/api/openai/conversations/${id}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, imageBase64, imageMimeType }),
         signal: abortControllerRef.current.signal,
       });
 
@@ -134,6 +140,9 @@ export function ChatView() {
               if (data.content) {
                 setStreamingContent((prev) => prev + data.content);
               }
+              if (data.tokensUsed) {
+                setLastTokensUsed(data.tokensUsed);
+              }
               if (data.done) break;
             } catch {
               // ignore parse errors
@@ -148,9 +157,7 @@ export function ChatView() {
     } finally {
       setIsStreaming(false);
       setStreamingContent("");
-      queryClient.invalidateQueries({ queryKey: getGetOpenaiConversationQueryKey(id) });
-      queryClient.invalidateQueries({ queryKey: getListOpenaiMessagesQueryKey(id) });
-      queryClient.invalidateQueries({ queryKey: getListOpenaiConversationsQueryKey() });
+      invalidateAll();
     }
   };
 
@@ -182,11 +189,20 @@ export function ChatView() {
       <div className="shrink-0 border-b border-border/40 px-4 md:px-8 py-3 flex items-center gap-3 bg-background/60 backdrop-blur-sm">
         <div className="flex-1 min-w-0">
           <h2 className="text-sm font-semibold truncate text-foreground">{conversation.title}</h2>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <MessageSquare className="h-3 w-3 text-muted-foreground" />
-            <span className="text-[11px] text-muted-foreground font-mono">
-              {totalMessages} {totalMessages === 1 ? "message" : "messages"}
-            </span>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <MessageSquare className="h-3 w-3 text-muted-foreground" />
+              <span className="text-[11px] text-muted-foreground font-mono">
+                {totalMessages} {totalMessages === 1 ? "message" : "messages"}
+              </span>
+            </div>
+            {(conversation.totalTokensUsed ?? 0) > 0 && (
+              <TokenBadge tokens={conversation.totalTokensUsed ?? 0} />
+            )}
+            <TagEditor
+              conversationId={id}
+              tags={conversation.tags ?? []}
+            />
           </div>
         </div>
         <Button
@@ -214,7 +230,7 @@ export function ChatView() {
               <div className="font-mono text-sm uppercase tracking-widest text-primary">
                 Connection Established
               </div>
-              <p className="text-sm">Type a message to begin transmission.</p>
+              <p className="text-sm">Type a message, attach an image, or use voice to begin.</p>
             </div>
           )}
 
@@ -223,6 +239,8 @@ export function ChatView() {
               key={msg.id}
               role={msg.role as "user" | "assistant"}
               content={msg.content}
+              imageUrl={msg.imageUrl ?? undefined}
+              tokensUsed={msg.tokensUsed ?? undefined}
             />
           ))}
 
@@ -246,8 +264,14 @@ export function ChatView() {
       )}
 
       {/* Input */}
-      <div className="shrink-0 bg-gradient-to-t from-background via-background to-transparent pt-6 pb-4 px-4 relative z-10">
-        <ChatInput onSend={handleSend} isStreaming={isStreaming} onStop={handleStop} />
+      <div className="shrink-0 bg-gradient-to-t from-background via-background to-transparent pt-4 pb-4 px-0 relative z-10">
+        <ChatInput
+          onSend={handleSend}
+          isStreaming={isStreaming}
+          onStop={handleStop}
+          conversationId={id}
+          onVoiceDone={invalidateAll}
+        />
       </div>
     </div>
   );

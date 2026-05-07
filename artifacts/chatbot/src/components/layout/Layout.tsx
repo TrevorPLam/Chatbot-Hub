@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { Sidebar } from "./Sidebar";
+import { TokenUsagePanel } from "./TokenUsagePanel";
 import { Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useCreateOpenaiConversation } from "@workspace/api-client-react";
@@ -13,6 +14,7 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [tokenPanelOpen, setTokenPanelOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
@@ -30,16 +32,13 @@ export function Layout({ children }: LayoutProps) {
     );
   }, [createMutation, queryClient, setLocation]);
 
-  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey;
-      // Cmd/Ctrl+N → new chat
       if (mod && e.key === "n") {
         e.preventDefault();
         handleNewChat();
       }
-      // Cmd/Ctrl+K → focus search
       if (mod && e.key === "k") {
         e.preventDefault();
         searchInputRef.current?.focus();
@@ -56,6 +55,7 @@ export function Layout({ children }: LayoutProps) {
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         searchInputRef={searchInputRef}
+        onShowTokenUsage={() => setTokenPanelOpen(true)}
       />
 
       <main className="flex-1 flex flex-col min-w-0 relative">
@@ -73,6 +73,10 @@ export function Layout({ children }: LayoutProps) {
           {children}
         </div>
       </main>
+
+      {tokenPanelOpen && (
+        <TokenUsagePanel onClose={() => setTokenPanelOpen(false)} />
+      )}
     </div>
   );
 }
