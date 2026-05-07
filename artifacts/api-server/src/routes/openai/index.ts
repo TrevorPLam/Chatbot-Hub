@@ -4,6 +4,7 @@ import { db, conversations, messages } from "@workspace/db";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import {
   CreateOpenaiConversationBody,
+  UpdateOpenaiConversationBody,
   GetOpenaiConversationParams,
   DeleteOpenaiConversationParams,
   ListOpenaiMessagesParams,
@@ -60,6 +61,33 @@ router.get("/openai/conversations/:id", async (req, res): Promise<void> => {
     .orderBy(messages.createdAt);
 
   res.json({ ...convo, messages: msgs });
+});
+
+router.patch("/openai/conversations/:id", async (req, res): Promise<void> => {
+  const params = GetOpenaiConversationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const body = UpdateOpenaiConversationBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const [updated] = await db
+    .update(conversations)
+    .set({ title: body.data.title })
+    .where(eq(conversations.id, params.data.id))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Conversation not found" });
+    return;
+  }
+
+  res.json(updated);
 });
 
 router.delete("/openai/conversations/:id", async (req, res): Promise<void> => {
@@ -173,6 +201,16 @@ router.post(
       role: "assistant",
       content: fullResponse,
     });
+
+    // Auto-generate title from first user message if title is still default
+    if (convo.title === "New Conversation") {
+      const truncated = userContent.slice(0, 60).trim();
+      const autoTitle = truncated.length < userContent.length ? truncated + "…" : truncated;
+      await db
+        .update(conversations)
+        .set({ title: autoTitle })
+        .where(eq(conversations.id, conversationId));
+    }
 
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();

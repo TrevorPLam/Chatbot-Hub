@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { useRoute } from "wouter";
+import { useRoute, useSearch } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { ChatInput } from "@/components/chat/ChatInput";
@@ -15,8 +15,10 @@ import type { OpenaiMessage } from "@workspace/api-client-react/src/generated/ap
 export function ChatView() {
   const [, params] = useRoute("/conversations/:id");
   const id = Number(params?.id);
+  const search = useSearch();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const autoSentRef = useRef(false);
   
   const [streamingContent, setStreamingContent] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -30,6 +32,19 @@ export function ChatView() {
   });
 
   const messages = conversation?.messages || [];
+
+  // Auto-send prompt from query param (e.g. when clicking a suggestion on welcome screen)
+  useEffect(() => {
+    if (!id || isLoading || autoSentRef.current) return;
+    const promptParam = new URLSearchParams(search).get("prompt");
+    if (promptParam && messages.length === 0) {
+      autoSentRef.current = true;
+      handleSend(promptParam);
+      // Clean up the URL without re-mounting
+      window.history.replaceState(null, "", `/conversations/${id}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, isLoading, messages.length]);
 
   // Scroll to bottom when messages change or streaming content updates
   useEffect(() => {
